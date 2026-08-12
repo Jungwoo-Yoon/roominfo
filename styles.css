@@ -639,9 +639,41 @@ ul, ol { padding: 0; list-style: none; }
   padding: 18px 22px;
 }
 .review-top { display: flex; align-items: center; gap: 11px; margin-bottom: 12px; }
-.review-who { display: grid; line-height: 1.4; }
+.review-who { display: grid; gap: 3px; line-height: 1.4; }
 .review-who strong { font-size: 13.5px; font-weight: 700; }
 .review-who span { font-size: 11.5px; color: var(--ink-3); }
+.review-who .who-line { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+
+/* 거주 인증 배지 */
+.badge-verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 21px;
+  padding: 0 9px 0 7px;
+  border-radius: 999px;
+  background: #e4f0e3;
+  color: #4a8a4d;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+}
+.badge-verified svg { width: 12px; height: 12px; flex: 0 0 12px; }
+.badge-verified.is-off {
+  background: var(--surface-mute);
+  color: var(--ink-4);
+  padding: 0 9px;
+}
+
+/* 좁은 곳(우측 패널)용 아이콘 전용 배지 */
+.badge-tick {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-left: 4px;
+  color: #5ba55e;
+}
+.badge-tick svg { width: 13px; height: 13px; }
 .review-right { margin-left: auto; text-align: right; display: grid; gap: 4px; justify-items: end; }
 .review-score { font-size: 13px; font-weight: 800; }
 .review-date { font-size: 11px; color: var(--ink-4); }

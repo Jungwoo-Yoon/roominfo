@@ -101,6 +101,29 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+/* ---------------------------- 거주 인증 배지 ---------------------------- */
+const CHECK_SVG =
+  `<svg viewBox="0 0 14 14" aria-hidden="true">
+     <circle cx="7" cy="7" r="6.4" fill="currentColor" opacity=".2"/>
+     <path d="M4.1 7.2 6 9.1 9.9 5.1" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+   </svg>`;
+
+/**
+ * 리뷰어 닉네임 옆에 붙는 인증 배지.
+ * compact 모드는 우측 패널처럼 좁은 곳을 위한 아이콘 전용입니다.
+ */
+function verifiedBadge(verified, compact = false) {
+  if (compact) {
+    return verified
+      ? `<span class="badge-tick" title="거주 인증" role="img" aria-label="거주 인증">${CHECK_SVG}</span>`
+      : '';
+  }
+  return verified
+    ? `<span class="badge-verified">${CHECK_SVG}거주 인증</span>`
+    : `<span class="badge-verified is-off" title="거주를 인증하지 않은 리뷰예요">미인증</span>`;
+}
+
 /* ---------------------------- 별점 렌더 ---------------------------- */
 function starsHTML(value, size = '') {
   const v = Math.max(0, Math.min(5, value || 0));
@@ -391,7 +414,7 @@ function renderPanel() {
         <span class="avatar" style="background:${avatarColor(r.author)}">${esc(initial(r.author))}</span>
         <span>
           <span class="pcard-top">
-            <span class="pcard-name">${esc(r.author)}</span>
+            <span class="pcard-name">${esc(r.author)}${verifiedBadge(r.verified, true)}</span>
             <span class="pcard-date">${esc(r.date)}</span>
           </span>
           <span class="pcard-txt">${esc(r.text)}</span>
@@ -488,8 +511,8 @@ function renderDetail() {
         <div class="review-top">
           <span class="avatar" style="background:${avatarColor(r.author)}">${esc(initial(r.author))}</span>
           <div class="review-who">
-            <strong>${esc(r.author)}</strong>
-            <span>거주 ${esc(r.period)}${r.verified ? ' · 거주 인증' : ' · 미인증'}</span>
+            <span class="who-line"><strong>${esc(r.author)}</strong>${verifiedBadge(r.verified)}</span>
+            <span>거주 ${esc(r.period)}</span>
           </div>
           <div class="review-right">
             <div style="display:flex;align-items:center;gap:7px">
@@ -752,8 +775,8 @@ function renderListView() {
             <div class="review-top">
               <span class="avatar" style="background:${avatarColor(r.author)}">${esc(initial(r.author))}</span>
               <div class="review-who">
-                <strong>${esc(room.name)}</strong>
-                <span>${esc(r.author)} · 거주 ${esc(r.period)}${r.verified ? ' · 거주 인증' : ' · 미인증'}</span>
+                <span class="who-line"><strong>${esc(room.name)}</strong>${verifiedBadge(r.verified)}</span>
+                <span>${esc(r.author)} · 거주 ${esc(r.period)}</span>
               </div>
               <div class="review-right">
                 <div style="display:flex;align-items:center;gap:7px">${starsHTML(r.rating)}<span class="review-score">${fmt(r.rating)}</span></div>
