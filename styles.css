@@ -282,6 +282,15 @@ ul, ol { padding: 0; list-style: none; }
 }
 .headline em { font-style: normal; color: var(--violet); }
 
+.lead {
+  max-width: 640px;
+  margin-top: 12px;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--ink-3);
+}
+.lead b { color: var(--ink-2); font-weight: 600; }
+
 .subrow { display: flex; align-items: center; gap: 12px; margin: 26px 0 14px; }
 .subrow-label { font-size: 14px; font-weight: 600; }
 .round-caret {

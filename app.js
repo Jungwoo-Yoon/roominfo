@@ -1228,9 +1228,16 @@ function routeFromHash() {
    최초 1회는 gtag('config')가 이미 page_view를 보내므로 건너뜁니다. */
 let firstRoute = true;
 
+const BASE_TITLE = '원룸 리뷰 사이트 방구석 — 살아본 사람이 남긴 자취방 실거주 후기';
+
 function trackNavigation() {
   const room = state.view === 'detail' ? getRoom(state.roomId) : null;
   const title = room ? `방 상세 – ${room.name}` : `${VIEW_TITLES[state.view] || state.view} – 방구석`;
+
+  // 브라우저 탭·북마크·공유 링크에 화면에 맞는 제목이 남도록 합니다.
+  document.title = room
+    ? `${room.name} 원룸 리뷰 — ${room.walk} | 방구석`
+    : state.view === 'map' ? BASE_TITLE : `${VIEW_TITLES[state.view] || ''} | 방구석 원룸 리뷰`;
 
   if (firstRoute) {
     firstRoute = false;
