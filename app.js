@@ -50,6 +50,77 @@ function track(name, params = {}) {
   } catch (e) { /* 분석 실패가 사용자 경험을 막지 않도록 */ }
 }
 
+/** 방문자 중 리뷰 작성자 비율을 낼 수 있도록 사용자 속성으로 남깁니다.
+    localStorage 기준이라, 저장소를 지우거나 기기를 바꾸면 다시 'no'가 됩니다. */
+function syncUserProps() {
+  const n = store.data.userReviews.length;
+  try {
+    if (typeof gtag === 'function') {
+      gtag('set', 'user_properties', {
+        review_writer: n > 0 ? 'yes' : 'no',
+        reviews_written: String(Math.min(n, 10)),
+      });
+    }
+  } catch (e) {}
+}
+
+/* ---- 리뷰 열람 체류 시간 ----
+   탭이 백그라운드에 있는 동안은 세지 않습니다(진짜 읽은 시간만 남기기 위해).
+   구간 기준은 여기서 조정하세요. */
+const READ_SKIM_SEC = 5;
+const READ_DEEP_SEC = 20;
+
+let visit = null;   // { roomId, activeMs, resumedAt, helpful }
+
+function startRoomVisit(room) {
+  if (!room) return;
+  visit = {
+    roomId: room.id,
+    activeMs: 0,
+    resumedAt: document.hidden ? null : performance.now(),
+    helpful: 0,
+  };
+}
+
+function pauseRoomVisit() {
+  if (!visit || visit.resumedAt == null) return;
+  visit.activeMs += performance.now() - visit.resumedAt;
+  visit.resumedAt = null;
+}
+
+function resumeRoomVisit() {
+  if (visit && visit.resumedAt == null) visit.resumedAt = performance.now();
+}
+
+/** 방 상세를 떠날 때 얼마나 읽었는지 남깁니다. */
+function endRoomVisit(exitReason) {
+  if (!visit) return;
+  pauseRoomVisit();
+
+  const sec = Math.round(visit.activeMs / 1000);
+  const level =
+    visit.helpful > 0     ? 'engaged' :   // 도움돼요를 눌렀다면 시간과 무관하게 정독으로 봅니다
+    sec >= READ_DEEP_SEC  ? 'read'    :
+    sec >= READ_SKIM_SEC  ? 'skim'    : 'bounce';
+
+  track('review_engagement', {
+    ...roomParams(getRoom(visit.roomId)),
+    engaged_seconds: sec,
+    helpful_clicks: visit.helpful,
+    engagement_level: level,
+    meaningful_read: level === 'read' || level === 'engaged',
+    exit_reason: exitReason,
+    transport_type: 'beacon',   // 탭을 닫는 순간에도 전송되도록
+  });
+  visit = null;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pauseRoomVisit();
+  else resumeRoomVisit();
+});
+window.addEventListener('pagehide', () => endRoomVisit('leave_site'));
+
 /** 방 관련 이벤트에 공통으로 붙이는 정보 */
 function roomParams(room) {
   if (!room) return {};
@@ -758,6 +829,7 @@ function submitReview(room, getMain, aspectValues) {
   const now = new Date();
   const date = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
   const verified = $('#fVerify').checked;
+  const isFirstEver = store.data.userReviews.length === 0;   // 작성자 전환 여부
 
   store.data.userReviews.push({
     id: `u-${Date.now()}`,
@@ -774,6 +846,9 @@ function submitReview(room, getMain, aspectValues) {
   });
   store.save();
 
+  // 사용자 속성을 먼저 갱신해야 이번 이벤트부터 '작성자'로 집계됩니다.
+  syncUserProps();
+
   track('submit_review', {
     ...roomParams(room),
     review_rating: rating,
@@ -781,7 +856,11 @@ function submitReview(room, getMain, aspectValues) {
     aspect_count: Object.keys(usedAspects).length,
     tag_count: $('#fTags').value.split(',').filter(t => t.trim()).length,
     text_length: text.length,
+    is_first_review: isFirstEver,
   });
+
+  // 읽기만 하던 방문자가 작성자로 전환된 순간. 이 이벤트의 사용자 수 / 전체 사용자 수 = 작성 전환율
+  if (isFirstEver) track('first_review_written', roomParams(room));
 
   if (!verified && state.verifiedOnly) {
     state.verifiedOnly = false;
@@ -1019,6 +1098,8 @@ document.addEventListener('click', e => {
     store.data.likes[id] = !store.data.likes[id];
     store.save();
     render();
+    // 이번 열람에서 도움돼요를 눌렀다면 '정독'으로 봅니다.
+    if (store.data.likes[id] && visit) visit.helpful++;
     track('like_review', {
       review_id: id,
       liked: !!store.data.likes[id],
@@ -1042,6 +1123,7 @@ document.addEventListener('click', e => {
   if (del) {
     store.data.userReviews = store.data.userReviews.filter(r => r.id !== del.dataset.del);
     store.save();
+    syncUserProps();
     toast('리뷰를 삭제했어요.');
     render();
     return;
@@ -1051,6 +1133,7 @@ document.addEventListener('click', e => {
   if (reset) {
     store.data = { userReviews: [], likes: {}, saved: {} };
     store.save();
+    syncUserProps();
     toast('저장된 데이터를 모두 지웠어요.');
     render();
     return;
@@ -1122,6 +1205,8 @@ const VIEWS = ['map', 'list', 'ranking', 'saved', 'write', 'myreviews', 'setting
 
 /** 주소창 해시로 화면을 결정합니다. 방 상세는 #/room/r1 처럼 공유할 수 있어요. */
 function routeFromHash() {
+  endRoomVisit('navigate');   // 다른 화면으로 넘어가기 전에 열람 기록을 마감
+
   const h = location.hash.replace(/^#\/?/, '');
   const room = h.match(/^room\/(.+)$/);
 
@@ -1159,7 +1244,10 @@ function trackNavigation() {
   }
 
   // 어떤 방이 많이 열리는지 — 최초 진입(공유 링크)까지 포함해 집계합니다.
-  if (room) track('view_room', roomParams(room));
+  if (room) {
+    track('view_room', roomParams(room));
+    startRoomVisit(room);
+  }
 }
 
 function go(hash) {
@@ -1173,5 +1261,6 @@ window.addEventListener('hashchange', () => {
 });
 
 /* ---------------------------- 시작 ---------------------------- */
+syncUserProps();      // 첫 이벤트부터 작성자 여부가 붙도록 라우팅보다 먼저
 syncVerifiedToggle();
 routeFromHash();
