@@ -36,6 +36,34 @@ const state = {
   ty: 0,
 };
 
+/* ---------------------------- 분석 (GA4) ----------------------------
+   gtag가 없어도(광고 차단, 오프라인, file:// 실행 등) 앱은 그대로 동작해야 하므로
+   모든 전송은 이 헬퍼를 거칩니다. */
+const VIEW_TITLES = {
+  map: '지도', detail: '방 상세', list: '전체 목록', ranking: '평점 랭킹',
+  saved: '관심 목록', write: '리뷰 쓰기', myreviews: '내가 쓴 리뷰', settings: '설정',
+};
+
+function track(name, params = {}) {
+  try {
+    if (typeof gtag === 'function') gtag('event', name, params);
+  } catch (e) { /* 분석 실패가 사용자 경험을 막지 않도록 */ }
+}
+
+/** 방 관련 이벤트에 공통으로 붙이는 정보 */
+function roomParams(room) {
+  if (!room) return {};
+  return {
+    room_id: room.id,
+    room_name: room.name,
+    room_type: room.type,
+    rating: Number(fmt(roomScore(room))) || 0,
+    review_count: visibleReviews(room).length,
+    rent: room.rent,
+    deposit: room.deposit,
+  };
+}
+
 /* ---------------------------- 데이터 헬퍼 ---------------------------- */
 function allRooms() {
   return ROOMS.map(room => {
@@ -746,6 +774,15 @@ function submitReview(room, getMain, aspectValues) {
   });
   store.save();
 
+  track('submit_review', {
+    ...roomParams(room),
+    review_rating: rating,
+    verified,
+    aspect_count: Object.keys(usedAspects).length,
+    tag_count: $('#fTags').value.split(',').filter(t => t.trim()).length,
+    text_length: text.length,
+  });
+
   if (!verified && state.verifiedOnly) {
     state.verifiedOnly = false;
     syncVerifiedToggle();
@@ -964,11 +1001,17 @@ document.addEventListener('click', e => {
     state.filter = chip.dataset.filter;
     $$('#filterChips .chip').forEach(c => c.classList.toggle('is-on', c.dataset.filter === state.filter));
     render();
+    track('select_filter', { filter: state.filter, screen_name: state.view });
     return;
   }
 
   const sort = e.target.closest('[data-sort]');
-  if (sort) { state.sort = sort.dataset.sort; render(); return; }
+  if (sort) {
+    state.sort = sort.dataset.sort;
+    render();
+    track('sort_reviews', { sort: state.sort, room_id: state.roomId || '' });
+    return;
+  }
 
   const like = e.target.closest('[data-like]');
   if (like) {
@@ -976,6 +1019,11 @@ document.addEventListener('click', e => {
     store.data.likes[id] = !store.data.likes[id];
     store.save();
     render();
+    track('like_review', {
+      review_id: id,
+      liked: !!store.data.likes[id],
+      ...roomParams(getRoom(state.roomId)),
+    });
     return;
   }
 
@@ -986,6 +1034,7 @@ document.addEventListener('click', e => {
     store.save();
     toast(store.data.saved[id] ? '관심 목록에 담았어요.' : '관심 목록에서 뺐어요.');
     render();
+    track('save_room', { saved: !!store.data.saved[id], ...roomParams(getRoom(id)) });
     return;
   }
 
@@ -1028,6 +1077,13 @@ $('#searchInput').addEventListener('input', e => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
     state.query = e.target.value;
+
+    // 어떤 조건으로 방을 찾는지. 한두 글자는 입력 중인 경우가 많아 제외합니다.
+    const q = state.query.trim();
+    if (q.length >= 2) {
+      track('search', { search_term: q, result_count: allRooms().filter(matchesFilter).length });
+    }
+
     if (state.view === 'detail' && state.query) { go('#/list'); return; }
     render();
     if (state.view === 'map') {
@@ -1045,6 +1101,7 @@ $('#verifiedToggle').addEventListener('click', () => {
   syncVerifiedToggle();
   toast(state.verifiedOnly ? '거주 인증 리뷰만 봅니다.' : '모든 리뷰를 봅니다.');
   render();
+  track('toggle_verified_only', { enabled: state.verifiedOnly });
 });
 
 $('#mapHelpBtn').addEventListener('click', () => {
@@ -1079,6 +1136,30 @@ function routeFromHash() {
     state.roomId = null;
   }
   render();
+  trackNavigation();
+}
+
+/* 화면 전환 집계.
+   최초 1회는 gtag('config')가 이미 page_view를 보내므로 건너뜁니다. */
+let firstRoute = true;
+
+function trackNavigation() {
+  const room = state.view === 'detail' ? getRoom(state.roomId) : null;
+  const title = room ? `방 상세 – ${room.name}` : `${VIEW_TITLES[state.view] || state.view} – 방구석`;
+
+  if (firstRoute) {
+    firstRoute = false;
+  } else {
+    track('page_view', {
+      page_location: location.href,
+      page_path: location.hash || '#/map',
+      page_title: title,
+      screen_name: state.view,
+    });
+  }
+
+  // 어떤 방이 많이 열리는지 — 최초 진입(공유 링크)까지 포함해 집계합니다.
+  if (room) track('view_room', roomParams(room));
 }
 
 function go(hash) {
