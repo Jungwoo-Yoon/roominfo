@@ -290,6 +290,8 @@ ul, ol { padding: 0; list-style: none; }
   color: var(--ink-3);
 }
 .lead b { color: var(--ink-2); font-weight: 600; }
+.lead a { color: var(--violet); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.lead a:hover { text-decoration: underline; }
 
 .subrow { display: flex; align-items: center; gap: 12px; margin: 26px 0 14px; }
 .subrow-label { font-size: 14px; font-weight: 600; }
