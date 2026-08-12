@@ -30,6 +30,16 @@ const stars = v => `<span class="stars" role="img" aria-label="5점 만점에 ${
   `<span class="stars-on" style="width:${(v / 5) * 100}%">★★★★★</span></span>`;
 
 const SITE = 'https://roominfo.vercel.app';
+
+// 리뷰 본문은 첫 문장까지만 싣습니다. 전문을 그대로 두면 앱의 열람권이 무의미해집니다.
+// 문장 경계에서 끊어야 읽기에 자연스럽고, 잘렸다는 것도 분명히 드러납니다.
+// 검색엔진에는 페이지에 실제로 보이는 내용만 노출되므로 클로킹 문제도 없습니다.
+const TEASER_MAX = 60;
+function teaser(t) {
+  const end = t.indexOf('. ');
+  if (end > 10 && end <= TEASER_MAX) return t.slice(0, end + 1);
+  return t.slice(0, TEASER_MAX).trim() + '…';
+}
 const totalReviews = ROOMS.reduce((a, r) => a + r.reviews.length, 0);
 const allAvg = avg(ROOMS.flatMap(r => r.reviews), r => r.rating);
 
@@ -44,7 +54,8 @@ const sections = ROOMS.map(room => {
         <article class="r-review">
           <h3>${esc(r.author)} <span class="r-badge">거주 인증</span></h3>
           <p class="r-meta">거주 ${esc(r.period)} · ${esc(r.date)} 작성 · ${stars(r.rating)} <b>${fmt(r.rating)}</b></p>
-          <p class="r-text">${esc(r.text)}</p>
+          <p class="r-text">${esc(teaser(r.text))}${teaser(r.text).length < r.text.length
+            ? ` <a class="r-full" href="/#/room/${room.id}">전문 보기</a>` : ''}</p>
           <p class="r-tags">${(r.tags || []).map(t => `<span>#${esc(t)}</span>`).join(' ')}</p>
         </article>`).join('');
 
@@ -98,7 +109,7 @@ document.getElementById('out').textContent = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 
 <title>성균관대 앞 원룸 리뷰 전체보기 — 자취방 ${ROOMS.length}곳 실거주 후기 ${totalReviews}개 | 방구석</title>
-<meta name="description" content="성균관대 캠퍼스타운 원룸·오피스텔 ${ROOMS.length}곳의 실거주 리뷰 ${totalReviews}개를 한 페이지에 모았습니다. 채광, 방음, 수압, 벌레, 습도, 집주인 항목별 별점과 이전 거주자가 직접 남긴 후기를 확인하세요." />
+<meta name="description" content="성균관대 캠퍼스타운 원룸·오피스텔 ${ROOMS.length}곳의 실거주 리뷰 ${totalReviews}개를 한 페이지에 모았습니다. 채광, 방음, 수압, 벌레, 습도, 집주인 항목별 별점과 이전 거주자가 직접 남긴 후기 요약을 확인하세요." />
 <meta name="robots" content="index, follow, max-image-preview:large" />
 <meta name="theme-color" content="#f4f4f2" />
 <link rel="canonical" href="${SITE}/reviews.html" />
@@ -156,6 +167,11 @@ ${jsonld}
              padding: 3px 9px; border-radius: 999px; }
   .r-meta { font-size: 11.5px; color: var(--ink-3); margin-top: 6px; display: flex; align-items: center; gap: 7px; }
   .r-text { font-size: 13.5px; line-height: 1.85; color: var(--ink-2); margin-top: 12px; }
+  .r-full { color: var(--violet); font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .doc-notice { margin-top: 16px; padding: 14px 18px; background: var(--violet-tint);
+                border-radius: var(--radius-md); font-size: 12.5px; line-height: 1.75; color: #6b3a95; }
+  .doc-notice b { color: #55287a; }
+  .doc-notice a { color: #7c3fae; font-weight: 600; }
   .r-tags { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
   .r-tags span { font-size: 11px; color: var(--ink-3); background: var(--surface-mute);
                  border-radius: 999px; padding: 4px 10px; }
@@ -178,9 +194,13 @@ ${jsonld}
     성균관대 캠퍼스타운 <b>원룸·오피스텔 ${ROOMS.length}곳</b>에 쌓인
     <b>실거주 리뷰 ${totalReviews}개</b>를 한 페이지에 모았습니다.
     전체 평균 평점은 <b>${fmt(allAvg)}점</b>입니다.
-    채광, 방음, 수압, 벌레, 습도·단열, 관리·집주인 여섯 항목을 0.5점 단위로 평가했고,
-    본문은 이전 거주자가 직접 남긴 내용 그대로입니다.
-    발품으로는 알기 어려운 정보 위주로 확인하세요.
+    채광, 방음, 수압, 벌레, 습도·단열, 관리·집주인 여섯 항목을 0.5점 단위로 평가했습니다.
+    발품으로는 알기 어려운 정보 위주라, 방을 보러 가기 전에 확인해 두면 좋습니다.
+  </p>
+  <p class="doc-notice">
+    이 페이지에는 리뷰의 <b>앞부분만</b> 실려 있습니다.
+    전문은 <a href="/">지도 화면</a>에서 열람권으로 볼 수 있고,
+    <b>실거주 인증 리뷰를 한 번 작성하면 모든 리뷰를 무제한</b>으로 읽을 수 있습니다.
   </p>
 
   <nav class="toc">
