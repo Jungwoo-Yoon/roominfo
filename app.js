@@ -8,13 +8,19 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 /* ---------------------------- 저장소 ---------------------------- */
 const STORE_KEY = 'roominfo.v1';
 
+/** 자취 경험이 없어 리뷰를 쓸 수 없는 이용자를 위한 기본 지급량 */
+const INITIAL_PASSES = 20;
+
 const store = {
-  data: { userReviews: [], likes: {}, saved: {} },
+  data: { userReviews: [], likes: {}, saved: {}, passes: INITIAL_PASSES, unlocked: {} },
   load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
       if (raw) Object.assign(this.data, JSON.parse(raw));
     } catch (e) { /* 저장소를 못 읽어도 앱은 동작해야 합니다 */ }
+    // 이전 버전 저장값에는 열람권 항목이 없으므로 채워 넣습니다.
+    if (typeof this.data.passes !== 'number') this.data.passes = INITIAL_PASSES;
+    if (!this.data.unlocked) this.data.unlocked = {};
   },
   save() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(this.data)); } catch (e) {}
@@ -79,6 +85,7 @@ function startRoomVisit(room) {
     activeMs: 0,
     resumedAt: document.hidden ? null : performance.now(),
     helpful: 0,
+    unlocked: 0,
   };
 }
 
@@ -98,8 +105,10 @@ function endRoomVisit(exitReason) {
   pauseRoomVisit();
 
   const sec = Math.round(visit.activeMs / 1000);
+  // 도움돼요를 눌렀거나 열람권을 썼다면 시간과 무관하게 정독으로 봅니다.
+  const acted = visit.helpful > 0 || visit.unlocked > 0;
   const level =
-    visit.helpful > 0     ? 'engaged' :   // 도움돼요를 눌렀다면 시간과 무관하게 정독으로 봅니다
+    acted                 ? 'engaged' :
     sec >= READ_DEEP_SEC  ? 'read'    :
     sec >= READ_SKIM_SEC  ? 'skim'    : 'bounce';
 
@@ -107,6 +116,7 @@ function endRoomVisit(exitReason) {
     ...roomParams(getRoom(visit.roomId)),
     engaged_seconds: sec,
     helpful_clicks: visit.helpful,
+    unlocked_reviews: visit.unlocked,
     engagement_level: level,
     meaningful_read: level === 'read' || level === 'engaged',
     exit_reason: exitReason,
@@ -162,6 +172,23 @@ function avgOf(list, pick = r => r.rating) {
 function roomScore(room) { return avgOf(visibleReviews(room)); }
 
 function likeCount(r) { return (r.likes || 0) + (store.data.likes[r.id] ? 1 : 0); }
+
+/* ---------------------------- 열람권 ----------------------------
+   상단 요약(항목별 평점·기본 정보·태그)은 누구나 볼 수 있고,
+   거주자 리뷰 본문만 열람권 1개로 하나씩 열립니다.
+   실거주 인증 리뷰를 한 번 남기면 그 뒤로는 무제한입니다. */
+
+/** 실거주 인증 리뷰를 쓴 사람은 열람권 없이 전부 볼 수 있습니다. */
+function hasUnlimited() {
+  return store.data.userReviews.some(r => r.verified);
+}
+
+/** 내가 쓴 리뷰와 이미 연 리뷰는 다시 차감하지 않습니다. */
+function isUnlocked(review) {
+  return !!review.isMine || hasUnlimited() || !!store.data.unlocked[review.id];
+}
+
+function passesLeft() { return Math.max(0, store.data.passes); }
 
 function fmt(n, d = 1) { return n == null ? '–' : n.toFixed(d); }
 
@@ -516,7 +543,11 @@ function renderPanel() {
             <span class="pcard-name">${esc(r.author)}${verifiedBadge(r.verified, true)}</span>
             <span class="pcard-date">${esc(r.date)}</span>
           </span>
-          <span class="pcard-txt">${esc(r.text)}</span>
+          ${isUnlocked(r)
+            ? `<span class="pcard-txt">${esc(r.text)}</span>`
+            : `<span class="pcard-txt is-locked">${(r.tags || []).length
+                ? (r.tags || []).map(t => `#${esc(t)}`).join(' ')
+                : '열람권으로 볼 수 있는 리뷰'}</span>`}
           <span class="pcard-room">${esc(room.name)} · ${fmt(r.rating)}점</span>
         </span>
         <span class="pchev"><svg viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
@@ -601,10 +632,29 @@ function renderDetail() {
   reviews.forEach(r => (r.tags || []).forEach(t => { tagCount[t] = (tagCount[t] || 0) + 1; }));
   const topTags = Object.entries(tagCount).sort((a, b) => b[1] - a[1]).slice(0, 6);
 
+  const unlimited = hasUnlimited();
+  const left = passesLeft();
+
   const reviewCards = sortReviews(reviews).map(r => {
     const liked = !!store.data.likes[r.id];
+    const locked = !isUnlocked(r);
     const mini = r.aspects ? ASPECT_KEYS.map(a =>
       `<span class="mini-aspect">${a.label} <b>${fmt(r.aspects[a.key])}</b></span>`).join('') : '';
+
+    // 열람권이 남아 있으면 1개로 열고, 다 썼으면 리뷰 작성으로 안내합니다.
+    const overlay = !locked ? '' : `
+          <div class="lock-overlay">
+            ${left > 0 ? `
+              <button class="btn btn-primary btn-sm" data-unlock="${esc(r.id)}">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 7V5a3.5 3.5 0 0 1 7 0v2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><rect x="3.2" y="7" width="9.6" height="6.6" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+                열람권 1개로 보기
+              </button>
+              <span class="lock-note">남은 열람권 <b>${left}개</b></span>`
+            : `
+              <b class="lock-title">열람권을 모두 사용했어요</b>
+              <button class="btn btn-primary btn-sm" data-scroll-form>실거주 인증 리뷰 쓰고 무제한 보기</button>`}
+          </div>`;
+
     return `
       <article class="review">
         <div class="review-top">
@@ -622,13 +672,17 @@ function renderDetail() {
           </div>
         </div>
         ${mini ? `<div class="review-aspects">${mini}</div>` : ''}
-        <p class="review-body">${esc(r.text)}</p>
+        <div class="review-body-wrap">
+          <p class="review-body${locked ? ' is-locked' : ''}">${esc(r.text)}</p>
+          ${overlay}
+        </div>
         <div class="review-foot">
           ${(r.tags || []).map(t => `<span class="tag t-gray">#${esc(t)}</span>`).join('')}
+          ${locked ? '' : `
           <button class="like-btn${liked ? ' is-on' : ''}" data-like="${esc(r.id)}">
             <svg viewBox="0 0 16 16"><path d="M4 7.5v5.2h6.6a1.6 1.6 0 0 0 1.6-1.3l.8-3.6a1 1 0 0 0-1-1.2H9.4l.5-2.4A1.3 1.3 0 0 0 8.6 2.6L6.2 7H4Z" fill="${liked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
             도움돼요 ${likeCount(r)}
-          </button>
+          </button>`}
         </div>
       </article>`;
   }).join('');
@@ -767,6 +821,25 @@ function renderDetail() {
           </form>
     </div>
 
+    ${unlimited ? `
+    <div class="pass-bar is-free">
+      <span class="pass-ic">✓</span>
+      <div>
+        <b>모든 리뷰를 무제한으로 볼 수 있어요</b>
+        <span>실거주 인증 리뷰를 남겨주셔서 열람권이 필요 없습니다.</span>
+      </div>
+    </div>`
+    : `
+    <div class="pass-bar${left === 0 ? ' is-empty' : ''}">
+      <span class="pass-ic">${left}</span>
+      <div>
+        <b>${left > 0 ? `남은 열람권 ${left}개` : '열람권을 모두 사용했어요'}</b>
+        <span>리뷰 본문 하나를 열 때마다 열람권 1개가 사용됩니다.
+          <b>실거주 인증 리뷰를 작성하면 이후 모든 리뷰를 무제한</b>으로 볼 수 있어요.</span>
+      </div>
+      <button class="btn btn-sm${left === 0 ? ' btn-primary' : ''}" data-scroll-form>리뷰 쓰고 무제한 전환</button>
+    </div>`}
+
     <div class="section-title">
       <h2>거주자 리뷰</h2>
       <span class="count">${reviews.length}개</span>
@@ -830,6 +903,7 @@ function submitReview(room, getMain, aspectValues) {
   const date = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
   const verified = $('#fVerify').checked;
   const isFirstEver = store.data.userReviews.length === 0;   // 작성자 전환 여부
+  const wasLimited = !hasUnlimited();                        // 이번 리뷰로 무제한이 되는지
 
   store.data.userReviews.push({
     id: `u-${Date.now()}`,
@@ -862,7 +936,15 @@ function submitReview(room, getMain, aspectValues) {
   // 읽기만 하던 방문자가 작성자로 전환된 순간. 이 이벤트의 사용자 수 / 전체 사용자 수 = 작성 전환율
   if (isFirstEver) track('first_review_written', roomParams(room));
 
-  if (!verified && state.verifiedOnly) {
+  // 실거주 인증 리뷰를 처음 남기면 열람권 제한이 풀립니다.
+  const justUnlimited = verified && wasLimited;
+  if (justUnlimited) {
+    track('unlimited_granted', { ...roomParams(room), passes_left_at_grant: passesLeft() });
+  }
+
+  if (justUnlimited) {
+    toast('실거주 인증 리뷰 감사합니다! 이제 모든 리뷰를 열람권 없이 볼 수 있어요.');
+  } else if (!verified && state.verifiedOnly) {
     state.verifiedOnly = false;
     syncVerifiedToggle();
     toast('미인증 리뷰로 등록했어요. 인증 리뷰 필터를 껐습니다.');
@@ -936,6 +1018,10 @@ function renderListView() {
       <div class="card" style="margin-top:18px;max-width:520px">
         <div class="card-head"><h3>이 브라우저에 저장된 내 데이터</h3></div>
         <div class="spec">
+          <div class="spec-row"><span>리뷰 열람</span><b>${hasUnlimited()
+            ? '무제한 (실거주 인증 리뷰 작성)'
+            : `열람권 ${passesLeft()}개 남음 / ${INITIAL_PASSES}개`}</b></div>
+          <div class="spec-row"><span>열어본 리뷰</span><b>${Object.values(store.data.unlocked).filter(Boolean).length}개</b></div>
           <div class="spec-row"><span>작성한 리뷰</span><b>${store.data.userReviews.length}개</b></div>
           <div class="spec-row"><span>관심 목록</span><b>${Object.values(store.data.saved).filter(Boolean).length}곳</b></div>
           <div class="spec-row"><span>도움돼요 누른 리뷰</span><b>${Object.values(store.data.likes).filter(Boolean).length}개</b></div>
@@ -1030,6 +1116,11 @@ function render() {
   $('#savedBadge').textContent = Object.values(store.data.saved).filter(Boolean).length;
   $('#mineBadge').textContent = store.data.userReviews.length;
 
+  const pass = $('#passLabel');
+  pass.textContent = hasUnlimited() ? '리뷰 열람 무제한' : `열람권 ${passesLeft()}개`;
+  pass.classList.toggle('is-unlimited', hasUnlimited());
+  pass.classList.toggle('is-empty', !hasUnlimited() && passesLeft() === 0);
+
   const navKey = isDetail ? 'map' : state.view;
   $$('.nav-item').forEach(b => b.classList.toggle('is-active', b.dataset.nav === navKey));
 }
@@ -1092,6 +1183,34 @@ document.addEventListener('click', e => {
     return;
   }
 
+  const unlock = e.target.closest('[data-unlock]');
+  if (unlock) {
+    const id = unlock.dataset.unlock;
+    if (hasUnlimited() || store.data.unlocked[id]) { render(); return; }
+    if (passesLeft() <= 0) {
+      toast('열람권을 모두 사용했어요. 실거주 인증 리뷰를 남기면 무제한으로 볼 수 있어요.');
+      return;
+    }
+    store.data.passes -= 1;
+    store.data.unlocked[id] = true;
+    store.save();
+    if (visit) visit.unlocked++;
+
+    track('unlock_review', {
+      review_id: id,
+      passes_left: passesLeft(),
+      passes_used: INITIAL_PASSES - passesLeft(),
+      ...roomParams(getRoom(state.roomId)),
+    });
+    if (passesLeft() === 0) track('passes_exhausted', roomParams(getRoom(state.roomId)));
+
+    toast(passesLeft() > 0
+      ? `열람권 1개를 사용했어요. ${passesLeft()}개 남았습니다.`
+      : '마지막 열람권을 사용했어요. 리뷰를 작성하면 무제한으로 볼 수 있어요.');
+    render();
+    return;
+  }
+
   const like = e.target.closest('[data-like]');
   if (like) {
     const id = like.dataset.like;
@@ -1131,7 +1250,7 @@ document.addEventListener('click', e => {
 
   const reset = e.target.closest('[data-reset]');
   if (reset) {
-    store.data = { userReviews: [], likes: {}, saved: {} };
+    store.data = { userReviews: [], likes: {}, saved: {}, passes: INITIAL_PASSES, unlocked: {} };
     store.save();
     syncUserProps();
     toast('저장된 데이터를 모두 지웠어요.');

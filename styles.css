@@ -701,6 +701,54 @@ ul, ol { padding: 0; list-style: none; }
 .like-btn.is-on { background: var(--violet-tint); border-color: var(--violet-soft); color: #7c3fae; font-weight: 600; }
 .like-btn svg { width: 14px; height: 14px; }
 
+/* ---- 열람권 ---- */
+.review-body-wrap { position: relative; }
+.review-body.is-locked {
+  filter: blur(5px);
+  user-select: none;
+  pointer-events: none;
+  opacity: .8;
+}
+.lock-overlay {
+  position: absolute; inset: -6px -6px -10px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
+  background: linear-gradient(180deg, rgba(255,255,255,.72) 0%, rgba(255,255,255,.92) 55%, #fff 100%);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+.lock-note { font-size: 11.5px; color: var(--ink-3); }
+.lock-note b { color: var(--ink); font-weight: 700; }
+.lock-title { font-size: 13px; font-weight: 700; color: var(--ink-2); }
+
+.pass-bar {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--violet-tint);
+  border: 1px solid var(--violet-soft);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-top: 26px;
+}
+.pass-bar b { font-size: 13.5px; font-weight: 700; display: block; }
+.pass-bar > div > span { font-size: 12px; color: var(--ink-3); line-height: 1.6; display: block; margin-top: 3px; }
+.pass-bar > div > span b { display: inline; color: #7c3fae; font-size: 12px; }
+.pass-bar .btn { margin-left: auto; flex: 0 0 auto; }
+.pass-ic {
+  width: 38px; height: 38px; flex: 0 0 38px;
+  border-radius: 12px;
+  background: var(--violet); color: #fff;
+  display: grid; place-items: center;
+  font-size: 14px; font-weight: 800;
+}
+.pass-bar.is-empty { background: #fdeaea; border-color: #f6cccc; }
+.pass-bar.is-empty .pass-ic { background: var(--coral); }
+.pass-bar.is-free { background: #e9f4e9; border-color: #cfe4ce; }
+.pass-bar.is-free .pass-ic { background: #6fae72; }
+
+#passLabel.is-unlimited { color: #5fa860; font-weight: 600; }
+#passLabel.is-empty { color: var(--coral); font-weight: 600; }
+
+.pcard-txt.is-locked { color: var(--ink-4); font-style: normal; }
+
 .review-aspects { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .mini-aspect {
   display: inline-flex; align-items: center; gap: 6px;
