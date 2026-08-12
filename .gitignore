@@ -1,0 +1,10 @@
+# Claude Code 로컬 설정
+.claude/settings.local.json
+
+# 디자인 시안 원본 (외부 저작물이라 저장소에서 제외)
+*.pdf
+
+# OS / 편집기
+Thumbs.db
+.DS_Store
+.vscode/
